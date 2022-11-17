@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace ViagogoHomeAssessment
 {
@@ -26,9 +27,14 @@ namespace ViagogoHomeAssessment
 
             var customerQuery = events.Where(x => x.City == customer.City);
 
+            Console.WriteLine("Displaying events in the same city");
             foreach (var data in customerQuery)
                 AddToEmail(customer, data);
 
+
+            Console.WriteLine("---------------------------------------");
+
+            Console.WriteLine("Displaying closes distance");
             ClosesDistance(events, customer);
 
             Console.WriteLine("End Process");
@@ -45,35 +51,33 @@ namespace ViagogoHomeAssessment
             {
                 var eventDistance = new EventDistance();
 
-                string key = $"{customer.City}-{item.City}";
-                try
-                {
-                    if (storageDictionary.ContainsKey(key))
-                        eventDistance.TotalDistance = storageDictionary[key];
-                    else
-                    {
-                        eventDistance.TotalDistance = GetDistance(item.City, customer.City);
-                        storageDictionary.Add(key, eventDistance.TotalDistance);
-                    }
+                var key = $"{customer.City}{item.City}";
 
-                    eventDistance.Customer = customer;
-                    eventDistance.Price = GetPrice(item);
-                    eventDistance.Event = item;
+                var orderedKey = string.Concat(key.OrderBy(c => c)); //To avoid saving duplications of the distance
 
-                    eventDistanceList.Add(eventDistance);
-                }
-                catch
+                if (storageDictionary.ContainsKey(orderedKey))
+                    eventDistance.TotalDistance = storageDictionary[orderedKey];
+                else
                 {
-                    // don't do anything if the exception is thrown
+                    eventDistance.TotalDistance = GetDistanceRetryCatch(item.City, customer.City);
+                    storageDictionary.Add(orderedKey
+                        , eventDistance.TotalDistance);
                 }
+
+                eventDistance.Customer = customer;
+                eventDistance.Price = GetPrice(item);
+                eventDistance.Event = item;
+
+                eventDistanceList.Add(eventDistance);
             }
 
 
-            //Thenby method will also order by price after ordering by distance
+            //Thenby method will also order by price after ordering by distance and you can also order by customer or event
 
             var eventQuery = eventDistanceList
                 .OrderBy(x => x.TotalDistance)
                 .ThenBy(x => x.Price)
+                .ThenBy(x => x.Event.City)
                 .Take(5)
                 .ToList();
 
@@ -99,6 +103,29 @@ namespace ViagogoHomeAssessment
         static int GetDistance(string fromCity, string toCity)
         {
             return AlphebiticalDistance(fromCity, toCity);
+        }
+
+        public static int GetDistanceRetryCatch(string fromCity, string toCity)
+        {
+            var tries = 3;
+            while (true)
+            {
+                try
+                {
+                    return GetDistance(fromCity, toCity);
+                }
+                catch
+                {
+                    if (--tries == 0)
+                    {
+                        Console.WriteLine(
+                            $"from city : {fromCity} and to city : {toCity} fail to calculate the distance");
+                        return 0;
+                    }
+
+                    Thread.Sleep(1000);
+                }
+            }
         }
 
         private static int AlphebiticalDistance(string s, string t)
